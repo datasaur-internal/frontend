@@ -133,7 +133,7 @@ function Chat({ initialQuery, onResponseUpdate }) {
   const handleInitialLoad = async () => {
     setLoading(true)
     try {
-      const response = await axios.post('http://127.0.0.1:8000/demo', { prompt: initialQuery })
+      const response = await axios.post('http://127.0.0.1:8000/generate', { prompt: initialQuery })
       const responseData = response.data
       
       const assistantMessage = {
@@ -172,7 +172,7 @@ function Chat({ initialQuery, onResponseUpdate }) {
     setLoading(true)
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/demo', { 
+      const response = await axios.post('http://127.0.0.1:8000/generate', { 
         prompt: currentInput
       })
       
@@ -209,7 +209,7 @@ function Chat({ initialQuery, onResponseUpdate }) {
     setLoading(true)
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/demo', { prompt: question })
+      const response = await axios.post('http://127.0.0.1:8000/generate', { prompt: question })
       const responseData = response.data
       const messageIndex = messages.length + 1
       
