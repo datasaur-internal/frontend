@@ -9,10 +9,16 @@ function Session() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const query = decodeURIComponent(searchParams.get('q') || '')
+  const urlApiEndpoint = searchParams.get('api') || 'demo'
   const [error, setError] = useState(null)
+  const [apiEndpoint, setApiEndpoint] = useState(urlApiEndpoint) // 'demo' or 'generate'
 
   const handleResponseUpdate = (data) => {
     // Handle response update if needed
+  }
+
+  const toggleApiEndpoint = () => {
+    setApiEndpoint(prev => prev === 'demo' ? 'generate' : 'demo')
   }
 
   if (error) {
@@ -59,28 +65,28 @@ function Session() {
           className="w-12 h-12 rounded-full bg-button hover:bg-button-hover transition-colors flex items-center justify-center"
           title="Home"
         >
-          <Home className="w-5 h-5 text-white" />
+          <Home className="w-5 h-5 text-black" />
         </button>
         
         <button 
           className="w-12 h-12 rounded-full bg-button hover:bg-button-hover transition-colors flex items-center justify-center"
           title="New Chat"
         >
-          <Plus className="w-5 h-5 text-white" />
+          <Plus className="w-5 h-5 text-black" />
         </button>
         
         <button 
           className="w-12 h-12 rounded-full bg-button hover:bg-button-hover transition-colors flex items-center justify-center"
           title="Settings"
         >
-          <Settings className="w-5 h-5 text-white" />
+          <Settings className="w-5 h-5 text-black" />
         </button>
         
         <button 
           className="w-12 h-12 rounded-full bg-button hover:bg-button-hover transition-colors flex items-center justify-center"
           title="Profile"
         >
-          <User className="w-5 h-5 text-white" />
+          <User className="w-5 h-5 text-black" />
         </button>
       </div>
 
@@ -90,23 +96,45 @@ function Session() {
         <div className="bg-sidebar-opacity backdrop-blur-sm border-b border-border px-8 py-4">
           <div className="max-w-5xl mx-auto flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-serif text-text-primary">EduGen AI</h1>
+              <h1 className="text-2xl font-serif text-text-primary">lyrnios.ai</h1>
               <p className="text-xs text-text-secondary mt-1 font-mono">
                 Session: {id.slice(0, 8)}...
               </p>
             </div>
-            <button
-              onClick={() => navigate('/')}
-              className="px-6 py-2 rounded-full bg-button hover:bg-button-hover text-icon-on-button text-sm transition-colors"
-            >
-              New Query
-            </button>
+            <div className="flex items-center gap-4">
+              {/* API Endpoint Toggle */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-secondary font-mono">API:</span>
+                <button
+                  onClick={toggleApiEndpoint}
+                  className={`px-3 py-1 rounded-full text-xs font-mono transition-colors ${
+                    apiEndpoint === 'demo' 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-green-500 text-white'
+                  }`}
+                  title={`Currently using /${apiEndpoint} endpoint. Click to switch.`}
+                >
+                  /{apiEndpoint}
+                </button>
+              </div>
+              <button
+                onClick={() => navigate('/')}
+                className="px-6 py-2 rounded-full bg-button hover:bg-button-hover text-icon-on-button text-sm transition-colors"
+              >
+                New Query
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Chat Interface */}
         <div className="flex-1 overflow-hidden">
-          <Chat initialQuery={query} onResponseUpdate={handleResponseUpdate} />
+          <Chat 
+            initialQuery={query} 
+            onResponseUpdate={handleResponseUpdate}
+            apiEndpoint={apiEndpoint}
+            onApiEndpointChange={setApiEndpoint}
+          />
         </div>
       </div>
     </div>

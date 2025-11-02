@@ -68,14 +68,27 @@ function MermaidChart({ diagram }) {
           startOnLoad: true,
           theme: 'default',
           securityLevel: 'loose',
+          logLevel: 1, // Reduce console noise
         })
 
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`
         const { svg: svgCode } = await mermaid.render(id, cleanDiagram)
         setSvg(svgCode)
       } catch (error) {
-        console.error('Error rendering mermaid diagram:', error)
-        setSvg('<p class="text-black">Error rendering diagram</p>')
+        console.warn('Mermaid diagram rendering failed, using fallback:', error.message)
+        // Create a user-friendly fallback SVG instead of showing error
+        const fallbackSvg = `
+          <svg width="300" height="100" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1" rx="8"/>
+            <text x="50%" y="40%" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#6c757d">
+              Diagram Unavailable
+            </text>
+            <text x="50%" y="65%" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#adb5bd">
+              Please regenerate for a new diagram
+            </text>
+          </svg>
+        `
+        setSvg(fallbackSvg)
       }
     }
 

@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Plus } from 'lucide-react'
+import { Send, Plus, Volume2, Square } from 'lucide-react'
 import axios from 'axios'
 import MathRenderer from './MathRenderer'
 import MermaidChart from './MermaidChart'
 import CodeRenderer from './CodeRenderer'
+import LoadingDots from './LoadingDots'
 
 // Graph Image Component
 function GraphImage({ imageData, description }) {
@@ -59,7 +60,7 @@ function GraphImage({ imageData, description }) {
   )
 }
 
-function Chat({ initialQuery, onResponseUpdate }) {
+function Chat({ initialQuery, onResponseUpdate, apiEndpoint, onApiEndpointChange }) {
   const [messages, setMessages] = useState([
     { role: 'user', content: initialQuery }
   ])
@@ -67,8 +68,11 @@ function Chat({ initialQuery, onResponseUpdate }) {
   const [loading, setLoading] = useState(false)
   const [revealingSections, setRevealingSections] = useState({})
   const [isRevealing, setIsRevealing] = useState(false)
+  const [speakingSectionId, setSpeakingSectionId] = useState(null)
+  const [videoTimers, setVideoTimers] = useState({})
   const messagesEndRef = useRef(null)
   const chatContainerRef = useRef(null)
+  const currentAudioRef = useRef(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -95,7 +99,8 @@ function Chat({ initialQuery, onResponseUpdate }) {
       'further_questions',
       'mermaid_diagram',
       'graph',
-      'code'
+      'code',
+      'video'
     ]
 
     setIsRevealing(true)
@@ -111,6 +116,23 @@ function Chat({ initialQuery, onResponseUpdate }) {
             [messageIndex]: [...(prev[messageIndex] || []), sectionKey]
           }))
         }
+      } else if (sectionKey === 'video') {
+        // Always show video section as a loading state
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        setRevealingSections(prev => ({
+          ...prev,
+          [messageIndex]: [...(prev[messageIndex] || []), sectionKey]
+        }))
+        
+        // Start timer for this video section
+        const videoSectionId = `video-${messageIndex}`
+        setTimeout(() => {
+          setVideoTimers(prev => ({
+            ...prev,
+            [videoSectionId]: true
+          }))
+        }, 10000) // 10 seconds
+        
       } else if (data[sectionKey]) {
         await new Promise(resolve => setTimeout(resolve, 1000))
         setRevealingSections(prev => ({
@@ -133,7 +155,8 @@ function Chat({ initialQuery, onResponseUpdate }) {
   const handleInitialLoad = async () => {
     setLoading(true)
     try {
-      const response = await axios.post('http://127.0.0.1:8000/generate', { prompt: initialQuery })
+      const endpoint = apiEndpoint || 'demo'
+      const response = await axios.post(`http://127.0.0.1:8000/${endpoint}`, { prompt: initialQuery })
       const responseData = response.data
       
       const assistantMessage = {
@@ -172,7 +195,8 @@ function Chat({ initialQuery, onResponseUpdate }) {
     setLoading(true)
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/generate', { 
+      const endpoint = apiEndpoint || 'demo'
+      const response = await axios.post(`http://127.0.0.1:8000/${endpoint}`, { 
         prompt: currentInput
       })
       
@@ -209,7 +233,8 @@ function Chat({ initialQuery, onResponseUpdate }) {
     setLoading(true)
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/generate', { prompt: question })
+      const endpoint = apiEndpoint || 'demo'
+      const response = await axios.post(`http://127.0.0.1:8000/${endpoint}`, { prompt: question })
       const responseData = response.data
       const messageIndex = messages.length + 1
       
@@ -245,6 +270,106 @@ function Chat({ initialQuery, onResponseUpdate }) {
     { key: 'study_plan', title: 'Study Plan' },
   ]
 
+  // Extract plain text from markdown content for text-to-speech
+  const extractPlainText = (markdown) => {
+    if (!markdown) return ''
+    
+    // Remove math blocks ($$...$$ and \(...\))
+    let text = markdown.replace(/\$\$[\s\S]*?\$\$/g, '')
+    text = text.replace(/\$[^$]+\$/g, '')
+    text = text.replace(/\\\([\s\S]*?\\\)/g, '')
+    text = text.replace(/\\\[[\s\S]*?\\\]/g, '')
+    
+    // Remove markdown syntax
+    text = text.replace(/#{1,6}\s+/g, '') // Headers
+    text = text.replace(/\*\*([^*]+)\*\*/g, '$1') // Bold
+    text = text.replace(/\*([^*]+)\*/g, '$1') // Italic
+    text = text.replace(/`([^`]+)`/g, '$1') // Inline code
+    text = text.replace(/```[\s\S]*?```/g, '') // Code blocks
+    text = text.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Links
+    text = text.replace(/!\[([^\]]*)\]\([^\)]+\)/g, '$1') // Images
+    text = text.replace(/^\s*[-*+]\s+/gm, '') // Bullet points
+    text = text.replace(/^\s*\d+\.\s+/gm, '') // Numbered lists
+    text = text.replace(/>\s+/g, '') // Blockquotes
+    
+    // Clean up extra whitespace
+    text = text.replace(/\n{3,}/g, '\n\n')
+    text = text.trim()
+    
+    return text
+  }
+
+  const handleTextToSpeech = async (content, sectionId) => {
+    if (!content) return
+    
+    // Check if Puter.js is available
+    if (typeof window.puter === 'undefined') {
+      alert('Puter.js is not loaded. Please refresh the page and try again.')
+      return
+    }
+    
+    // If the same section is already speaking, stop it
+    if (speakingSectionId === sectionId && currentAudioRef.current) {
+      currentAudioRef.current.pause()
+      currentAudioRef.current = null
+      setSpeakingSectionId(null)
+      return
+    }
+    
+    // Stop any ongoing audio from other sections
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause()
+      currentAudioRef.current = null
+    }
+    
+    const plainText = extractPlainText(content)
+    if (!plainText) {
+      return
+    }
+    
+    try {
+      // Set speaking state immediately
+      setSpeakingSectionId(sectionId)
+      
+      // Use Puter.js for text-to-speech
+      const audio = await window.puter.ai.txt2speech(plainText)
+      
+      // Store reference for cleanup
+      currentAudioRef.current = audio
+      
+      // Set up event listeners
+      audio.onended = () => {
+        setSpeakingSectionId(null)
+        currentAudioRef.current = null
+      }
+      
+      audio.onerror = (error) => {
+        console.error('Puter TTS error:', error)
+        setSpeakingSectionId(null)
+        currentAudioRef.current = null
+      }
+      
+      // Play the audio
+      await audio.play()
+      
+    } catch (error) {
+      console.error('Error with Puter TTS:', error)
+      setSpeakingSectionId(null)
+      currentAudioRef.current = null
+      alert('Error generating speech. Please try again.')
+    }
+  }
+  
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause()
+        currentAudioRef.current = null
+      }
+    }
+  }, [])
+
   return (
     <div className="flex flex-col h-full">
       <div 
@@ -279,17 +404,37 @@ function Chat({ initialQuery, onResponseUpdate }) {
                           const isRevealed = revealed.includes(section.key)
                           
                           return msg.data[section.key] && isRevealed ? (
-                            <div 
-                              key={section.key} 
-                              className="bg-card-opacity backdrop-blur-sm rounded-2xl border border-border p-6 animate-fadeIn"
-                            >
-                              <h3 className="text-lg font-semibold text-text-primary mb-3">
-                                {section.title}
-                              </h3>
-                              <div className="text-text-primary">
-                                <MathRenderer content={msg.data[section.key]} />
-                              </div>
-                            </div>
+                            (() => {
+                              const sectionId = `${idx}-${section.key}`
+                              const isSpeaking = speakingSectionId === sectionId
+                              return (
+                                <div 
+                                  key={section.key} 
+                                  className="bg-card-opacity backdrop-blur-sm rounded-2xl border border-border p-6 animate-fadeIn"
+                                >
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-lg font-semibold text-text-primary">
+                                      {section.title}
+                                    </h3>
+                                    <button
+                                      onClick={() => handleTextToSpeech(msg.data[section.key], sectionId)}
+                                      className="flex-shrink-0 w-8 h-8 flex items-center justify-center ml-2 bg-black hover:opacity-80 rounded-full"
+                                      title={isSpeaking ? "Stop reading" : "Read aloud"}
+                                      aria-label={isSpeaking ? "Stop reading section content" : "Read section content aloud"}
+                                    >
+                                      {isSpeaking ? (
+                                        <Square className="w-4 h-4 text-white" fill="currentColor" />
+                                      ) : (
+                                        <Volume2 className="w-4 h-4 text-white" />
+                                      )}
+                                    </button>
+                                  </div>
+                                  <div className="text-text-primary">
+                                    <MathRenderer content={msg.data[section.key]} />
+                                  </div>
+                                </div>
+                              )
+                            })()
                           ) : null
                         })}
 
@@ -326,7 +471,23 @@ function Chat({ initialQuery, onResponseUpdate }) {
                             <h3 className="text-lg font-semibold text-text-primary mb-3">
                               Diagram
                             </h3>
-                            <MermaidChart diagram={msg.data.mermaid_diagram} />
+                            <div className="min-h-[100px]">
+                              {(() => {
+                                try {
+                                  return <MermaidChart diagram={msg.data.mermaid_diagram} />
+                                } catch (error) {
+                                  console.warn('Error rendering diagram component:', error)
+                                  return (
+                                    <div className="flex items-center justify-center h-24 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                                      <div className="text-center">
+                                        <p className="text-gray-500 text-sm">Diagram temporarily unavailable</p>
+                                        <p className="text-gray-400 text-xs mt-1">Please try regenerating</p>
+                                      </div>
+                                    </div>
+                                  )
+                                }
+                              })()}
+                            </div>
                           </div>
                         )}
 
@@ -360,6 +521,56 @@ function Chat({ initialQuery, onResponseUpdate }) {
                               <CodeRenderer content={msg.data.code} />
                             </div>
                           </div>
+                        )}
+
+                        {/* Video Generation */}
+                        {(revealingSections[idx] || []).includes('video') && (
+                          (() => {
+                            const videoSectionId = `video-${idx}`
+                            const showDelayedMessage = videoTimers[videoSectionId]
+                            
+                            return (
+                              <div className="bg-card-opacity backdrop-blur-sm rounded-2xl border border-border p-6 animate-fadeIn">
+                                <h3 className="text-lg font-semibold text-text-primary mb-3">
+                                  Video Generated
+                                </h3>
+                                <div className={`rounded-lg overflow-hidden border border-border min-h-[300px] flex flex-col items-center justify-center ${
+                                  showDelayedMessage 
+                                    ? 'bg-gradient-to-br from-yellow-50 to-yellow-100' 
+                                    : 'bg-gradient-to-br from-gray-50 to-gray-100'
+                                }`}>
+                                  <div className="flex flex-col items-center justify-center space-y-4 px-6">
+                                    <div className="flex gap-1">
+                                      <div className={`w-3 h-3 rounded-full animate-bounce ${
+                                        showDelayedMessage ? 'bg-yellow-500' : 'bg-blue-500'
+                                      }`} style={{ animationDelay: '0ms', animationDuration: '1.4s' }}></div>
+                                      <div className={`w-3 h-3 rounded-full animate-bounce ${
+                                        showDelayedMessage ? 'bg-yellow-500' : 'bg-blue-500'
+                                      }`} style={{ animationDelay: '200ms', animationDuration: '1.4s' }}></div>
+                                      <div className={`w-3 h-3 rounded-full animate-bounce ${
+                                        showDelayedMessage ? 'bg-yellow-500' : 'bg-blue-500'
+                                      }`} style={{ animationDelay: '400ms', animationDuration: '1.4s' }}></div>
+                                    </div>
+                                    <div className="text-center">
+                                      {showDelayedMessage ? (
+                                        <>
+                                          <p className="text-yellow-800 font-medium text-base mb-2">Taking longer than expected</p>
+                                          <p className="text-yellow-700 text-sm leading-relaxed">
+                                            Your internet might be slow or your GPU might be struggling with heavy load
+                                          </p>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <p className="text-gray-700 font-medium text-base mb-1">Generation is On Queue</p>
+                                          <p className="text-gray-500 text-sm">Your video is being generated...</p>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })()
                         )}
                       </div>
                     </div>
